@@ -9,10 +9,12 @@
  */
 
 package com.moonlit.logfaces.appenders.logback;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -20,6 +22,11 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
+
+import javax.net.SocketFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
@@ -32,7 +39,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 	public static final String APPLICATION_KEY = "application";
 	public static final String HOSTNAME_KEY = "hostname";
 
-	protected String remoteHost;
+	protected String remoteHost, trustStore, trustStorePassword;;
 	protected InetAddress address;
 	protected int port = 55200;
 	protected OutputStreamWriter writer;
@@ -55,6 +62,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 	protected int nofFailures = 0;
 	protected int reconnectionDelay = DEFAULT_RECONNECTION_DELAY;
 	protected int warnOverflow;
+	protected SocketFactory socketFactory;
 
 	@Override
 	public void start(){
@@ -63,6 +71,8 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 		if(hosts.size() == 0)
 			throw new IllegalStateException("remoteHost property is required for appender: " + name);
 
+		createSocketFactory();
+		
 		// prepare async stuff
 		closing = false;
 		queue = new ArrayBlockingQueue<ILoggingEvent>(queueSize, true);
@@ -129,12 +139,33 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 		}
 	}
 
-	@SuppressWarnings("resource")
+	private void createSocketFactory(){
+		socketFactory = SocketFactory.getDefault();
+		if(trustStore == null || trustStore.isEmpty())
+			return;
+		if(trustStorePassword == null || trustStorePassword.isEmpty())
+			return;
+		
+		try {
+			TrustManager[] trustManagers;
+			SSLContext sslContext = SSLContext.getInstance("SSL");
+			KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+			keyStore.load(new FileInputStream(trustStore), trustStorePassword.toCharArray());
+			TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+			tmf.init(keyStore);
+			trustManagers = tmf.getTrustManagers();		
+			sslContext.init(null, trustManagers, null);
+			socketFactory = sslContext.getSocketFactory();
+		} catch (Exception e) {
+			addError(String.format("Failed to initialize SSL context: error: %s", e.getMessage()));
+		} 
+	}
+	
 	protected void connect(){
 		try{
 			cleanUp();
 			address = getAddressByName(hosts.get(hostIndex));
-			Socket socket = new Socket(address, port);
+			Socket socket = socketFactory.createSocket(address, port);
 			socket.setKeepAlive(true);
 			socket.setTcpNoDelay(true);
 			writer = new OutputStreamWriter(socket.getOutputStream());
@@ -192,7 +223,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 			while (!shutdown) {
 				try {
 					sleep(reconnectionDelay);
-					socket = new Socket(address, port);
+					socket = socketFactory.createSocket(address, port);
 					socket.setKeepAlive(true);
 					socket.setTcpNoDelay(true);
 					synchronized (this) {
@@ -261,6 +292,12 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 
 				try{
 					if(event != null){
+						// challenge few bytes to test broken connection
+						// without doing this, we may loose the event in socket buffers
+						writer.write("   ");
+						writer.flush();
+						
+						// transmit actual data
 						writer.write(layout.doLayout(event));
 						writer.flush();
 					}
@@ -272,8 +309,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 						break;
 
 					// put it back into queue for re-transmitt
-					if(event != null)
-						queue.offer(event);
+					queue.offer(event);
 					startFailover();
 				}
 				catch(Exception e){
@@ -305,6 +341,22 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 		return port;
 	}
 
+	public void setTrustStore(String trustStore) {
+		this.trustStore = trustStore;
+	}
+
+	public void setTrustStorePassword(String trustStorePassword) {
+		this.trustStorePassword = trustStorePassword;
+	}
+
+	public String getTrustStore() {
+		return this.trustStore;
+	}
+
+	public String setTrustStorePassword() {
+		return this.trustStorePassword;
+	}
+	
 	public void setLocationInfo(boolean locationInfo) {
 		this.locationInfo = locationInfo;
 		layout.setLocationInfo(locationInfo);

@@ -1,5 +1,6 @@
 package com.moonlit.logfaces.appenders;
 
+import java.net.InetAddress;
 import java.util.List;
 
 public class Utils {
@@ -81,5 +82,25 @@ public class Utils {
 		} catch (Exception e) {
 			return input;
 		}
+    }
+    
+    public static String getLocalHostName(int modification) {
+    	String hostName = "";
+		try {
+			hostName = InetAddress.getLocalHost().getHostName();
+		} 
+		catch(Exception e) {
+			try {
+				hostName = InetAddress.getLocalHost().getHostAddress();
+			} 
+			catch(Exception e2) {
+			}
+		}
+    	
+		if(modification == 0)
+			return hostName;
+		else if(modification > 0)
+			return hostName.toUpperCase();
+		return hostName.toLowerCase();
     }
 }

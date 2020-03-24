@@ -21,7 +21,6 @@
 
 package com.moonlit.logfaces.appenders.log4j2;
 
-import java.io.IOException;
 import java.io.Serializable;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -29,15 +28,18 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 
+import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Layout;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.appender.AppenderLoggingException;
+import org.apache.logging.log4j.status.StatusLogger;
 
 public class UdpManager implements SocketManager{
 	protected DatagramSocket ds;
     protected InetAddress address;
     protected int port;
     protected Layout<? extends Serializable> layout;
+    protected static final Logger LOGGER = StatusLogger.getLogger();
 	
 	public UdpManager(String host, int port, Layout<? extends Serializable> layout){
 		this.layout = layout;
@@ -77,7 +79,8 @@ public class UdpManager implements SocketManager{
 			DatagramPacket packet = new DatagramPacket(data, data.length, address, port);
 			ds.send(packet);
 			return true;
-		} catch (IOException e) {
+		} catch (Exception e) {
+			LOGGER.error("failed sending datagram, error: {}", e.getMessage());
 			return false;
 		}
 	}

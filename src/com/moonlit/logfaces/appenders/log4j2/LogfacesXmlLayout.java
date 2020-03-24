@@ -20,7 +20,6 @@
  */
 
 package com.moonlit.logfaces.appenders.log4j2;
-import java.net.InetAddress;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +31,7 @@ import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.layout.AbstractStringLayout;
 import org.apache.logging.log4j.core.util.Throwables;
 import org.apache.logging.log4j.core.util.Transform;
+import org.apache.logging.log4j.util.ReadOnlyStringMap;
 
 import com.moonlit.logfaces.appenders.Utils;
 
@@ -41,22 +41,11 @@ public class LogfacesXmlLayout extends AbstractStringLayout{
 	private String applicationName = "";
 	private String hostName = "";
 
-	protected LogfacesXmlLayout(String application, boolean locationInfo, Charset charset){
+	protected LogfacesXmlLayout(String application, String hostName, boolean locationInfo, Charset charset){
 		super(charset);
 		this.locationInfo = locationInfo;
 		this.applicationName = application;
-		
-		try {
-			hostName = InetAddress.getLocalHost().getHostName();
-		} 
-		catch(Exception e) {
-			try {
-				hostName = InetAddress.getLocalHost().getHostAddress();
-			} 
-			catch(Exception e2) {
-			}
-		}
-		
+		this.hostName = hostName;
 	}
 
     @Override
@@ -74,8 +63,10 @@ public class LogfacesXmlLayout extends AbstractStringLayout{
 		buf.append("\">\r\n");
 
 		buf.append("<log4j:message><![CDATA[");
-		String message = event.getMessage().getFormattedMessage();
-		Transform.appendEscapingCData(buf, Utils.safeXml(message));
+		if(event.getMessage() != null) {
+			String message = event.getMessage().getFormattedMessage();
+			Transform.appendEscapingCData(buf, Utils.safeXml(message));
+		}
 		buf.append("]]></log4j:message>\r\n");       
 
 		ContextStack ctx = event.getContextStack();
@@ -131,11 +122,11 @@ public class LogfacesXmlLayout extends AbstractStringLayout{
 			buf.append("\"/>\r\n");
 		}
 		
-		Map<String,String> contextMap = event.getContextMap();
+		ReadOnlyStringMap contextMap = event.getContextData();
 		if(contextMap != null){
-			for(Map.Entry<String, String> entry : contextMap.entrySet()){
-				String key = Utils.safeXml(entry.getKey());
-				String value = Utils.safeXml(String.valueOf(entry.getValue()));
+			Map<String, String> map = contextMap.toMap(); 
+			for(String key : map.keySet()){
+				String value = Utils.safeXml(String.valueOf(map.get(key)));
 				buf.append("<log4j:data name=\"");
 				buf.append(Transform.escapeHtmlTags(key));
 				buf.append("\" value=\"");

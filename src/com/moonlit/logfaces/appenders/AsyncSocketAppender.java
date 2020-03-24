@@ -12,10 +12,12 @@
  */
 
 package com.moonlit.logfaces.appenders;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
@@ -23,6 +25,11 @@ import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
+
+import javax.net.SocketFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 
 import org.apache.log4j.Appender;
 import org.apache.log4j.AppenderSkeleton;
@@ -48,7 +55,7 @@ public class AsyncSocketAppender extends AppenderSkeleton implements AppenderAtt
 	protected int reconnectionDelay = DEFAULT_RECONNECTION_DELAY;
 	protected boolean locationInfo = true;
 	protected Connector connector;
-	protected String application, format;
+	protected String application, format, trustStore, trustStorePassword;
 
 	protected String backupFile;
 	protected Appender backupAppender;
@@ -64,6 +71,7 @@ public class AsyncSocketAppender extends AppenderSkeleton implements AppenderAtt
 	protected int nofFailures = 0;
 	protected int warnOverflow;
 	protected long totalCount;
+	protected SocketFactory socketFactory;
 
 	@Override
 	public boolean requiresLayout(){
@@ -76,6 +84,8 @@ public class AsyncSocketAppender extends AppenderSkeleton implements AppenderAtt
 			throw new IllegalStateException("remoteHost property is required for appender: " + name);
 		layout = new LogfacesLayout(application, locationInfo, "json".equals(format));
 
+		createSocketFactory();
+		
 		// backward compatibility with log4j.porperties format which doesn't support
 		// appender references, the backup appender will be hard coded into RollingFileAppender
 		// using 'backupFile' property 
@@ -155,12 +165,11 @@ public class AsyncSocketAppender extends AppenderSkeleton implements AppenderAtt
 		}
 	}
 
-	@SuppressWarnings("resource")
 	protected void connect() {
 		try {
 			cleanUp();
 			address = getAddressByName(hosts.get(hostIndex));
-			Socket socket = new Socket(address, port);
+			Socket socket = socketFactory.createSocket(address, port);
 			socket.setKeepAlive(true);
 			socket.setTcpNoDelay(true);
 			oos = socket.getOutputStream();
@@ -234,7 +243,7 @@ public class AsyncSocketAppender extends AppenderSkeleton implements AppenderAtt
 			while (!shutdown) {
 				try {
 					sleep(reconnectionDelay);
-					socket = new Socket(address, port);
+					socket = socketFactory.createSocket(address, port);
 					socket.setKeepAlive(true);
 					socket.setTcpNoDelay(true);
 					synchronized (this) {
@@ -259,6 +268,28 @@ public class AsyncSocketAppender extends AppenderSkeleton implements AppenderAtt
 				}
 			}
 		}
+	}
+	
+	private void createSocketFactory(){
+		socketFactory = SocketFactory.getDefault();
+		if(trustStore == null || trustStore.isEmpty())
+			return;
+		if(trustStorePassword == null || trustStorePassword.isEmpty())
+			return;
+		
+		try {
+			TrustManager[] trustManagers;
+			SSLContext sslContext = SSLContext.getInstance("SSL");
+			KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+			keyStore.load(new FileInputStream(trustStore), trustStorePassword.toCharArray());
+			TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+			tmf.init(keyStore);
+			trustManagers = tmf.getTrustManagers();		
+			sslContext.init(null, trustManagers, null);
+			socketFactory = sslContext.getSocketFactory();
+		} catch (Exception e) {
+			System.err.println(String.format("Failed to initialize SSL context: error: %s", e.getMessage()));
+		} 
 	}
 	
 	class Dispatcher extends Thread{
@@ -289,6 +320,12 @@ public class AsyncSocketAppender extends AppenderSkeleton implements AppenderAtt
 				}
 				
 				try{
+					// challenge few bytes to test broken connection
+					// without doing this, we may loose the event in socket buffers
+					oos.write("  ".getBytes());
+					oos.flush();
+					
+					// transmit actual data
 					oos.write(layout.format(event).getBytes());
 					oos.flush();
 					totalCount++;
@@ -405,6 +442,22 @@ public class AsyncSocketAppender extends AppenderSkeleton implements AppenderAtt
 
 	public void setFormat(String format) {
 		this.format = format;
+	}
+	
+	public void setTrustStore(String trustStore) {
+		this.trustStore = trustStore;
+	}
+
+	public void setTrustStorePassword(String trustStorePassword) {
+		this.trustStorePassword = trustStorePassword;
+	}
+
+	public String getTrustStore() {
+		return this.trustStore;
+	}
+
+	public String setTrustStorePassword() {
+		return this.trustStorePassword;
 	}
 	
 	//

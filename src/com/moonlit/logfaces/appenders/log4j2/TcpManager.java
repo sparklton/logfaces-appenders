@@ -30,9 +30,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import javax.net.SocketFactory;
+
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Layout;
 import org.apache.logging.log4j.core.LogEvent;
+import org.apache.logging.log4j.core.net.ssl.SslConfiguration;
 import org.apache.logging.log4j.status.StatusLogger;
 
 public class TcpManager implements SocketManager{
@@ -48,6 +51,7 @@ public class TcpManager implements SocketManager{
 	protected volatile boolean started, operational;
 	protected int nofFailures = 0;
 	protected long totalCount;
+	protected SslConfiguration sslConfiguration;
 	protected static final Logger LOGGER = StatusLogger.getLogger();
 	
 	public TcpManager(String hosts, int port, int delay, int retries, Layout<? extends Serializable> layout) {
@@ -59,6 +63,11 @@ public class TcpManager implements SocketManager{
 		this.layout = layout;
 		this.reconnectionDelay = delay;
 		this.nofRetries = retries;
+	}
+	
+	public TcpManager(String hosts, int port, SslConfiguration sslConfiguration, int delay, int retries, Layout<? extends Serializable> layout) {
+		this(hosts, port, delay, retries, layout);
+		this.sslConfiguration = sslConfiguration;
 	}
 
 	@Override
@@ -87,6 +96,12 @@ public class TcpManager implements SocketManager{
 		if(event == null || !operational)
 			return false;
 		try{
+			// challenge few bytes to test broken connection
+			// without doing this, we may loose the event in socket buffers
+			oos.write("  ".getBytes());
+			oos.flush();
+			
+			// transmit actual data
 			String formatted = layout.toSerializable(event).toString();
 			oos.write(formatted.getBytes());
 			oos.flush();
@@ -94,11 +109,11 @@ public class TcpManager implements SocketManager{
 			return true;
 		}
 		catch(IOException e){
-			LOGGER.error(String.format("logFaces: appender socket write failed: %s", e.getMessage()));
+			LOGGER.error("socket write failed: {}", e.getMessage());
 			reconnect();
 		}
 		catch(Exception e){
-			LOGGER.error(String.format("logFaces: appender general purpose error: %s", e.getMessage()));
+			LOGGER.error("general purpose error: {}", e.getMessage());
 		}
 		return false;
 	}
@@ -109,7 +124,7 @@ public class TcpManager implements SocketManager{
 				oos.close();
 			}
 			catch (IOException e) {
-				LOGGER.error(String.format("logFaces: appender failed to close socket stream: %s", e.getMessage()));
+				LOGGER.error("failed to close socket stream: {}", e.getMessage());
 			}
 
 			oos = null;
@@ -147,16 +162,12 @@ public class TcpManager implements SocketManager{
 	class Connector extends Thread {
 		boolean shutdown = false;
 		
-		@SuppressWarnings("resource")
 		public void run() {
 			while(!shutdown){
 				try{
 					if(nofFailures > 0)
 						sleep(reconnectionDelay);
-					Socket socket = new Socket(address, port);
-					socket.setKeepAlive(true);
-					socket.setTcpNoDelay(true);
-					oos = socket.getOutputStream();
+					oos = createSocket().getOutputStream();
 					operational = true;
 					connector = null;
 					return;
@@ -176,6 +187,14 @@ public class TcpManager implements SocketManager{
 					}
 				}
 			}
+		}
+		
+		private Socket createSocket() throws Exception{
+			SocketFactory factory = (sslConfiguration == null) ? SocketFactory.getDefault() : sslConfiguration.getSslSocketFactory(); 
+			Socket socket = factory.createSocket(address, port);
+			socket.setKeepAlive(true);
+			socket.setTcpNoDelay(true);
+			return socket;
 		}
 	}
 }

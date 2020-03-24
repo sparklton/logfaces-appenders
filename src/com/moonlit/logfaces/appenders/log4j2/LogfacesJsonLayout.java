@@ -20,7 +20,6 @@
  */
 
 package com.moonlit.logfaces.appenders.log4j2;
-import java.net.InetAddress;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.List;
@@ -31,6 +30,7 @@ import org.apache.logging.log4j.ThreadContext.ContextStack;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.layout.AbstractStringLayout;
 import org.apache.logging.log4j.core.util.Throwables;
+import org.apache.logging.log4j.util.ReadOnlyStringMap;
 
 import com.moonlit.logfaces.appenders.Utils;
 
@@ -40,20 +40,11 @@ public class LogfacesJsonLayout extends AbstractStringLayout{
 	protected String applicationName = "";
 	protected String hostName = "";
 	
-	protected LogfacesJsonLayout(String application, boolean locationInfo, boolean compact, Charset charset){
+	protected LogfacesJsonLayout(String application, String hostName, boolean locationInfo, Charset charset){
 		super(charset);
 		this.locationInfo = locationInfo;
 		this.applicationName = application;
-		try {
-			hostName = InetAddress.getLocalHost().getHostName();
-		} 
-		catch(Exception e) {
-			try {
-				hostName = InetAddress.getLocalHost().getHostAddress();
-			} 
-			catch(Exception e2) {
-			}
-		}
+		this.hostName = hostName;
 	}
 
     @Override
@@ -67,7 +58,7 @@ public class LogfacesJsonLayout extends AbstractStringLayout{
 		Utils.jsonAttribute(buf, "r", event.getThreadName(), false);
 		Utils.jsonAttribute(buf, "p", event.getLevel().toString(), false);
 		Utils.jsonAttribute(buf, "g", event.getLoggerName(), false);
-		Utils.jsonAttribute(buf, "m", event.getMessage().getFormattedMessage(), false);
+		Utils.jsonAttribute(buf, "m", event.getMessage() != null ? event.getMessage().getFormattedMessage() : "", false);
 
 		ContextStack ctx = event.getContextStack();
 		if(ctx != null && ctx.getDepth() > 0)
@@ -94,10 +85,11 @@ public class LogfacesJsonLayout extends AbstractStringLayout{
 			}
 		}
 
-		Map<String,String> cmap = event.getContextMap();
+		ReadOnlyStringMap cmap = event.getContextData();
 		if(cmap != null && !cmap.isEmpty()){
-			for(String key : cmap.keySet()){
-				Utils.jsonAttribute(buf, "p_"+key, String.valueOf(cmap.get(key)), false);
+			Map<String,String> map = cmap.toMap();
+			for(String key : map.keySet()){
+				Utils.jsonAttribute(buf, "p_"+key, String.valueOf(map.get(key)), false);
 			}
 		}
 		

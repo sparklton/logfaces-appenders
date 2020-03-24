@@ -27,6 +27,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.Filter;
 import org.apache.logging.log4j.core.Layout;
@@ -39,7 +40,9 @@ import org.apache.logging.log4j.core.config.plugins.PluginAttribute;
 import org.apache.logging.log4j.core.config.plugins.PluginConfiguration;
 import org.apache.logging.log4j.core.config.plugins.PluginElement;
 import org.apache.logging.log4j.core.config.plugins.PluginFactory;
+import org.apache.logging.log4j.core.impl.Log4jLogEvent;
 import org.apache.logging.log4j.core.layout.AbstractStringLayout;
+import org.apache.logging.log4j.core.net.ssl.SslConfiguration;
 
 import com.moonlit.logfaces.appenders.Utils;
 
@@ -63,6 +66,7 @@ public class LogfacesAppender extends AbstractAppender{
 	protected int warnOverflow;
 	protected boolean locationInfo;
 	private Configuration config;
+	private String cls = getClass().getSimpleName();
 	
 	protected LogfacesAppender(final String name, 
 			                   final Layout<? extends Serializable> layout, 
@@ -73,15 +77,16 @@ public class LogfacesAppender extends AbstractAppender{
 
     @Override
     public void start() {
+    	setStarting();
     	queue = new ArrayBlockingQueue<LogEvent>(queueSize, true);
 		if(backupRef != null)
 			backup = config.getAppenders().get(backupRef);
-    	
+
 		dispatcher = new Dispatcher();
 		dispatcher.setName("LogfacesDispatcher");
 		dispatcher.setDaemon(true);
 		dispatcher.start();
-		while(!dispatcher.running){
+		while(!isStarted()){
 			try {
 				Thread.sleep(10);
 			} catch (InterruptedException e) {
@@ -89,26 +94,29 @@ public class LogfacesAppender extends AbstractAppender{
 		}
     	
 		socketManager.start();
-    	super.start();
+		LOGGER.trace("{} started",  cls);
     }
-	
+
     @Override
-    public void stop() {
-		// we wait until queue is flushed to server and then yild
+    public boolean stop(long timeout, TimeUnit timeUnit) {
+		// wait specified time for queue to flush flushed and then yield
 		// until then the appender will not receive any events
     	// the call is blocked until dispatcher is done fluching the queue
     	setStopping();
 		try {
-			dispatcher.running = false;
-			dispatcher.join();
+			dispatcher.interrupt();
+			dispatcher.join(timeUnit.toMillis(timeout));
 		} catch(Exception e) {
 		}
     	
-		dispatcher = null;
 		socketManager.stop();
-        super.stop();
+		setStopped();
+		
+		boolean ok = !dispatcher.isAlive() && dispatcher.orphans == 0 && queue.isEmpty();
+		LOGGER.log(ok ? Level.TRACE:Level.WARN, "{} stopped {}",  cls, ok ? "OK" : "with problems");
+		return ok;
     }
-	
+    
     @Override
     public void append(final LogEvent event) {
     	if(event == null || !isStarted())
@@ -116,7 +124,7 @@ public class LogfacesAppender extends AbstractAppender{
     	
 		event.getContextStack();
 		event.getThreadName();
-		event.getContextMap();
+		event.getContextData();
 		if(locationInfo)
 			event.getSource();
     	
@@ -125,23 +133,26 @@ public class LogfacesAppender extends AbstractAppender{
     		socketManager.send(event);
     		return;
     	}
-
+    	
 		try {
-			if(!queue.offer(event, offerTimeout, TimeUnit.MILLISECONDS)){
+	    	// must clone to avoid GC optimization reusing same objects
+	    	LogEvent clone = Log4jLogEvent.createMemento(event, locationInfo);
+			if(!queue.offer(clone, offerTimeout, TimeUnit.MILLISECONDS)){
 				if(warnOverflow++ == 0){
-					LOGGER.error(String.format("logFaces: appender queue is full [%d]. If you see this message it means that queue size needs to be increased, or amount of log events decreased.", queue.size()));
-					LOGGER.error((backup == null)?"logFaces: fall back is disabled":"logFaces backup appender activated; You can later import this data into the logfaces server manually.");
+					LOGGER.error("{} queue is full with {} events. If you see this message it means that queue size needs to be increased or amount of produced log events decreased.", cls, queue.size());
+					LOGGER.warn("{} {}", cls, (backup == null)?"fall back is disabled":"backup appender activated; You can later import this data into the logfaces server manually.");
 				}
 				if(backup != null)
 					backup.append(event);
 				return;
 			}
+
 			warnOverflow = 0;
 		}
 		catch(InterruptedException e) {
 		}
 		catch(Exception e){
-			LOGGER.error(String.format("logFaces: appender failed to append, error: %s", e.getMessage()));
+			LOGGER.error("{} failed to append: {}", cls, e.getMessage());
 		}
     }
     
@@ -184,20 +195,21 @@ public class LogfacesAppender extends AbstractAppender{
             @PluginAttribute(value = "charset", defaultString = "UTF-8") final Charset charset,
             @PluginAttribute("backup") final String backup,
             @PluginAttribute("format") final String format,
-            @PluginAttribute("compact") final String compact,
+            @PluginAttribute("hostCase") final String hostCase,
             @PluginElement("Filters") final Filter filter,
+            @PluginElement("SslConfiguration") final SslConfiguration sslConfiguration,
             @PluginConfiguration final Configuration config
             )
 	{
 		SocketManager sm = null;
 		boolean locationInfo = Utils.parseBool(location, false);
-		boolean compactFormat = Utils.parseBool(compact, true);
+		String localhost = Utils.getLocalHostName(Utils.parseInt(hostCase, 0));
 		AbstractStringLayout layout = "json".equalsIgnoreCase(format) ? 
-				                                   new LogfacesJsonLayout(application, locationInfo, compactFormat, charset) :			
-			                                       new LogfacesXmlLayout(application, locationInfo, charset);
+				                                   new LogfacesJsonLayout(application, localhost, locationInfo, charset) :			
+			                                       new LogfacesXmlLayout(application, localhost, locationInfo, charset);
 		
 		if(protocol == null || protocol.equalsIgnoreCase("tcp")){
-			sm = new TcpManager(host, Utils.parseInt(portNum, DEFAULT_PORT), 
+			sm = new TcpManager(host, Utils.parseInt(portNum, DEFAULT_PORT), sslConfiguration,
 					                  Utils.parseInt(delay, DEFAULT_RECONNECTION_DELAY), 
 					                  Utils.parseInt(nofRetries, DEFAULT_NOF_RETRIES),
 					                  layout);
@@ -217,14 +229,17 @@ public class LogfacesAppender extends AbstractAppender{
 	}
 	
 	class Dispatcher extends Thread{
-		volatile boolean running = false;
-
+		int orphans = 0;
 		public void run(){
-			running = true;
+			int failures = 0;
 			LogEvent event = null;
-			while(running || !queue.isEmpty()){
+			
+			setStarted();
+			while(isStarted()){
 				try {
 					if(!socketManager.isOperational()){
+						if(!isStarted())
+							break;
 						Thread.sleep(500);
 						continue;
 					}
@@ -232,18 +247,44 @@ public class LogfacesAppender extends AbstractAppender{
 					event = queue.poll(READ_QUEUE_TIMEOUT, TimeUnit.MILLISECONDS);
 					if(event == null)
 						continue;
-					if(!socketManager.send(event) && running)
-						queue.offer(event);
+					if(!socketManager.send(event)) {
+						// try few times to re-send
+						if(++failures < 3)
+							queue.offer(event);
+						else
+							LOGGER.warn("log event dropped, unable to deliver to server");
+						continue;
+					}
+					
+					failures = 0;
+					
 				} catch(InterruptedException e) {
 					break;
 				}
 				catch(Exception e){
-					if(!running)
-						break;
-					LOGGER.error(String.format("logFaces appender queue processing failed, error: %s", e.getMessage()));
+					LOGGER.error("{} queue processing failed: {}", cls, e.getMessage());
 					continue;
 				}
 			}
-		}		
+			
+			// make sure to leave nothing behind
+			if(!queue.isEmpty()) {
+				interrupted();
+				flush();
+			}
+		}	
+		
+		void flush() {
+			while(!queue.isEmpty()) {
+				try {
+					LogEvent event = queue.take();
+					if(!socketManager.send(event))
+						orphans++;
+				} catch(Exception e) {
+					break;
+				}
+			}
+			LOGGER.log(orphans > 0 ? Level.WARN : Level.TRACE, "{} flushed, orphaned {} events", cls, orphans);
+		}
 	}
 }

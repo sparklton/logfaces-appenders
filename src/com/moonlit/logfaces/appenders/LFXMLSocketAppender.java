@@ -20,6 +20,9 @@ import java.net.Socket;
 import org.apache.log4j.AppenderSkeleton;
 import org.apache.log4j.spi.LoggingEvent;
 
+/**
+ * @deprecated use AsyncSocketAppender instead
+ */
 public class LFXMLSocketAppender extends AppenderSkeleton {
 	private String remoteHost;
 	private InetAddress address;
