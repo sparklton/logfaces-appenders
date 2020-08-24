@@ -35,6 +35,7 @@ import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.async.RingBufferLogEvent;
 import org.apache.logging.log4j.core.config.Configuration;
+import org.apache.logging.log4j.core.config.Property;
 import org.apache.logging.log4j.core.config.plugins.Plugin;
 import org.apache.logging.log4j.core.config.plugins.PluginAttribute;
 import org.apache.logging.log4j.core.config.plugins.PluginConfiguration;
@@ -72,7 +73,7 @@ public class LogfacesAppender extends AbstractAppender{
 			                   final Layout<? extends Serializable> layout, 
 			                   final Filter filter) 
 	{
-		super(name, filter, layout, true);
+		super(name, filter, layout, true, Property.EMPTY_ARRAY);
 	}
 
     @Override
