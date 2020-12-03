@@ -39,7 +39,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 	public static final String APPLICATION_KEY = "application";
 	public static final String HOSTNAME_KEY = "hostname";
 
-	protected String remoteHost, trustStore, trustStorePassword;;
+	protected String remoteHost, trustStore, trustStorePassword, format;
 	protected InetAddress address;
 	protected int port = 55200;
 	protected OutputStreamWriter writer;
@@ -48,7 +48,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 	protected boolean delegateMarker = false;
 	protected boolean closing = false;
 	protected Connector connector;
-	protected LogfacesLayout layout = new LogfacesLayout();
+	protected LogfacesLayout layout;
 
 	protected Appender<ILoggingEvent> backupAppender;
 	protected BlockingQueue<ILoggingEvent>  queue;
@@ -71,6 +71,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 		if(hosts.size() == 0)
 			throw new IllegalStateException("remoteHost property is required for appender: " + name);
 
+		createLayout();
 		createSocketFactory();
 		
 		// prepare async stuff
@@ -137,6 +138,11 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 		   connector.interrupt();
 		   connector = null;
 		}
+	}
+	
+	private void createLayout() {
+		boolean json = (format != null && format.equals("json"));
+		layout = new LogfacesLayout(json, application, delegateMarker, locationInfo);
 	}
 
 	private void createSocketFactory(){
@@ -359,7 +365,6 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 	
 	public void setLocationInfo(boolean locationInfo) {
 		this.locationInfo = locationInfo;
-		layout.setLocationInfo(locationInfo);
 	}
 
 	public boolean getLocationInfo() {
@@ -368,7 +373,6 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 
 	public void setApplication(String lapp) {
 		this.application = lapp;
-		layout.setApplicationName(lapp);
 	}
 
 	public String getApplication() {
@@ -416,9 +420,13 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 	}
 	
 	public void setDelegateMarker(boolean delegateMarker) {
-		layout.setDelegateMarker(delegateMarker);
+		this.delegateMarker = delegateMarker;
 	}
 
+	public void setFormat(String format) {
+		this.format = format;
+	}
+	
 	//
 	// custom implementation of AppenderAttachable
 	// we allow only single appender to be attached to this appender

@@ -1,5 +1,6 @@
 /**
- * XML layout to be used with logback library and socket appender
+ * LogfacesLayout serializes logback events to be sent out with socket appender.
+ * Can be used with XML and JSON formats.
  * Created by Moonlit Software Ltd logfaces team.
  * 
  * All credits go to the authors of logback framework whose source code is re-used.
@@ -14,35 +15,43 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import ch.qos.logback.classic.log4j.XMLLayout;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.classic.spi.IThrowableProxy;
-import ch.qos.logback.classic.spi.ThrowableProxyUtil;
-
 import com.moonlit.logfaces.appenders.Transform;
 import com.moonlit.logfaces.appenders.Utils;
 
-public class LogfacesLayout extends XMLLayout {
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.IThrowableProxy;
+import ch.qos.logback.classic.spi.ThrowableProxyUtil;
+import ch.qos.logback.core.LayoutBase;
+
+public class LogfacesLayout extends LayoutBase<ILoggingEvent> {
 	private final int DEFAULT_SIZE = 256;
 	private final String MARKER_CONTEXT = "marker";
-	private static String REPLACE_REGEX = "[\\p{Cntrl}&&[^\r\n\t]]|[\\ufffe-\\uffff]";
-	private boolean delegateMarker, locationInfo;
+	private boolean delegateMarker, locationInfo, json;
 	private String applicationName = "", hostName;
 
-	public LogfacesLayout(){
+	public LogfacesLayout(boolean json, String app, boolean marker, boolean location){
+		this.json = json;
+		this.applicationName = app;
+		this.delegateMarker = marker;
+		this.locationInfo = location;
 		try {
-			hostName = InetAddress.getLocalHost().getHostName();
+			this.hostName = InetAddress.getLocalHost().getHostName();
 		} 
 		catch(Exception e) {
 			try {
-				hostName = InetAddress.getLocalHost().getHostAddress();
+				this.hostName = InetAddress.getLocalHost().getHostAddress();
 			} 
 			catch(Exception e2) {
 			}
 		}
 	}
-	
+
+	@Override
 	public String doLayout(ILoggingEvent event) {
+		return json ? doJsonLayout(event) : doXmlLayout(event);
+	}
+	
+	public String doXmlLayout(ILoggingEvent event) {
 		StringBuilder buf = new StringBuilder(DEFAULT_SIZE);
 		buf.append("<log4j:event logger=\"");
 		buf.append(event.getLoggerName());
@@ -56,8 +65,7 @@ public class LogfacesLayout extends XMLLayout {
 
 		buf.append("  <log4j:message><![CDATA[");
 		String message = event.getFormattedMessage();
-		message = (message != null) ? message.replaceAll(REPLACE_REGEX, "") : "";
-		Transform.appendEscapingCDATA(buf, message);
+		Transform.appendEscapingCDATA(buf, Utils.safeXml(message));
 		buf.append("]]></log4j:message>\r\n");
 
 		IThrowableProxy tp = event.getThrowableProxy();
@@ -65,8 +73,7 @@ public class LogfacesLayout extends XMLLayout {
 			buf.append("  <log4j:throwable><![CDATA[");
 			buf.append("\r\n");
 			String ex = ThrowableProxyUtil.asString(tp);
-			ex = (ex != null) ? ex.replaceAll(REPLACE_REGEX, "") : "";
-			buf.append(ex);
+			buf.append(Utils.safeXml(ex));
 			buf.append("\r\n");
 			buf.append("]]></log4j:throwable>\r\n");
 		}
@@ -87,7 +94,6 @@ public class LogfacesLayout extends XMLLayout {
 			}
 		}
 
-		// porperties
 		buf.append("<log4j:properties>\r\n");
 		buf.append("<log4j:data name=\"" + Utils.APP_KEY);
 		buf.append("\" value=\"" + Transform.escapeTags(applicationName));
@@ -97,7 +103,6 @@ public class LogfacesLayout extends XMLLayout {
 		buf.append("\" value=\"" + Transform.escapeTags(hostName));
 		buf.append("\"/>\r\n");
 		
-		// if marker should be delegated - do it here
 		if(delegateMarker && event.getMarker() != null){
 			buf.append("\r\n    <log4j:data");
 			buf.append(" name='" + Transform.escapeTags(MARKER_CONTEXT) + "'");
@@ -106,7 +111,6 @@ public class LogfacesLayout extends XMLLayout {
 		}
 		
 		Map<String, String> propertyMap = event.getMDCPropertyMap();
-
 		if ((propertyMap != null) && (propertyMap.size() != 0)) {
 			Set<Entry<String, String>> entrySet = propertyMap.entrySet();
 			for (Entry<String, String> entry : entrySet) {
@@ -123,15 +127,45 @@ public class LogfacesLayout extends XMLLayout {
 		return buf.toString();
 	}
 
-	public void setDelegateMarker(boolean delegateMarker) {
-		this.delegateMarker = delegateMarker;
-	}
+	public String doJsonLayout(ILoggingEvent event) {
+		StringBuilder buf = new StringBuilder(DEFAULT_SIZE);
+		buf.append("{");
+		
+		Utils.jsonAttribute(buf, "a", applicationName, true);
+		Utils.jsonAttribute(buf, "h", hostName, false);
+		Utils.jsonAttribute(buf, "t", Long.toString(event.getTimeStamp()), false);
+		Utils.jsonAttribute(buf, "r", event.getThreadName(), false);
+		Utils.jsonAttribute(buf, "p", event.getLevel().toString(), false);
+		Utils.jsonAttribute(buf, "g", event.getLoggerName(), false);
+		Utils.jsonAttribute(buf, "m", event.getMessage() != null ? event.getFormattedMessage() : "", false);
+		
+		IThrowableProxy tp = event.getThrowableProxy();
+		if (tp != null) {
+			Utils.jsonAttribute(buf, "w", "true", false);
+			Utils.jsonAttribute(buf, "i", ThrowableProxyUtil.asString(tp), false);
+		}
+		
+		if(locationInfo) {
+			StackTraceElement[] callerDataArray = event.getCallerData();
+			if (callerDataArray != null && callerDataArray.length > 0) {
+				StackTraceElement element = callerDataArray[0];
+				Utils.jsonAttribute(buf, "c", element.getClassName(), false);
+				Utils.jsonAttribute(buf, "e", element.getMethodName(), false);
+				Utils.jsonAttribute(buf, "f", element.getFileName(), false);
+				Utils.jsonAttribute(buf, "l", ""+element.getLineNumber(), false);
+			}
+		}
 
-	public void setLocationInfo(boolean locationInfo) {
-		this.locationInfo = locationInfo;
-	}
-
-	public void setApplicationName(String applicationName) {
-		this.applicationName = applicationName;
+		Map<String, String> mdc = event.getMDCPropertyMap();
+		if(mdc != null) {
+			for(String key : mdc.keySet())
+				Utils.jsonAttribute(buf, "p_"+key, String.valueOf(mdc.get(key)), false);
+		}
+		
+		if(delegateMarker && event.getMarker() != null)
+			Utils.jsonAttribute(buf, "p_"+MARKER_CONTEXT, event.getMarker().getName(), false);
+		
+		buf.append("}");
+		return buf.toString();
 	}
 }
