@@ -70,8 +70,11 @@ public class Utils {
     }
     
     public static String safeJson(String input){
+    	if(input == null || input.isEmpty())
+    		return"";
+    	
     	try {
-			String out = (input != null) ? input : "";
+			String out = input;
 			out = out.replace("\\", "\\\\");
 			out = out.replace("'", "\\'");
 			out = out.replace("{", "\\{");
