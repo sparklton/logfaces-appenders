@@ -300,6 +300,13 @@ public class AsyncSocketAppender extends AppenderSkeleton implements AppenderAtt
 			running = true;
 			while(running || !queue.isEmpty()){
 				try {
+					// give up at shutdown with non-empty when server is unavailable and recovery is not running
+					// otherwise this thread may get orphaned
+					if(oos == null && connector == null && !running && !queue.isEmpty()) {
+						System.err.println("logFaces appender dispatcher thread ends with non-empty queue");
+						return;
+					}
+					
 					if(oos == null){
 						Thread.sleep(500);
 						continue;
