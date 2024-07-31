@@ -80,7 +80,7 @@ public class UdpManager implements SocketManager{
 			ds.send(packet);
 			return true;
 		} catch (Exception e) {
-			LOGGER.error("failed sending datagram, error: {}", e.getMessage());
+			LOGGER.warn("failed sending datagram, error: {}", e.getMessage());
 			return false;
 		}
 	}

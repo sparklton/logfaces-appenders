@@ -11,12 +11,15 @@
 
 package com.moonlit.logfaces.appenders.logback;
 import java.net.InetAddress;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
-import com.moonlit.logfaces.appenders.Transform;
-import com.moonlit.logfaces.appenders.Utils;
+import org.slf4j.Marker;
+
+import com.moonlit.logfaces.appenders.util.Transform;
+import com.moonlit.logfaces.appenders.util.Utils;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.IThrowableProxy;
@@ -103,11 +106,14 @@ public class LogfacesLayout extends LayoutBase<ILoggingEvent> {
 		buf.append("\" value=\"" + Transform.escapeTags(hostName));
 		buf.append("\"/>\r\n");
 		
-		if(delegateMarker && event.getMarker() != null){
-			buf.append("\r\n    <log4j:data");
-			buf.append(" name='" + Transform.escapeTags(MARKER_CONTEXT) + "'");
-			buf.append(" value='" + Transform.escapeTags(event.getMarker().getName()) + "'");
-			buf.append("/>");
+		if(delegateMarker){
+			List<Marker> markers = event.getMarkerList();
+			if(markers != null && !markers.isEmpty()) {
+				buf.append("\r\n    <log4j:data");
+				buf.append(" name='" + Transform.escapeTags(MARKER_CONTEXT) + "'");
+				buf.append(" value='" + Transform.escapeTags(markers.get(0).getName()) + "'");
+				buf.append("/>");
+			}
 		}
 		
 		Map<String, String> propertyMap = event.getMDCPropertyMap();
@@ -162,8 +168,11 @@ public class LogfacesLayout extends LayoutBase<ILoggingEvent> {
 				Utils.jsonAttribute(buf, "p_"+key, String.valueOf(mdc.get(key)), false);
 		}
 		
-		if(delegateMarker && event.getMarker() != null)
-			Utils.jsonAttribute(buf, "p_"+MARKER_CONTEXT, event.getMarker().getName(), false);
+		if(delegateMarker) {
+			List<Marker> markers = event.getMarkerList();
+			if(markers != null && !markers.isEmpty())
+				Utils.jsonAttribute(buf, "p_"+MARKER_CONTEXT, markers.get(0).getName(), false);
+		}
 		
 		buf.append("}");
 		return buf.toString();

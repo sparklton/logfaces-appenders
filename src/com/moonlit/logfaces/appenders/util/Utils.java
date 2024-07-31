@@ -1,4 +1,4 @@
-package com.moonlit.logfaces.appenders;
+package com.moonlit.logfaces.appenders.util;
 
 import java.net.InetAddress;
 import java.util.List;
@@ -76,9 +76,9 @@ public class Utils {
     	try {
 			String out = input;
 			out = out.replace("\\", "\\\\");
-			out = out.replace("'", "\\'");
-			out = out.replace("{", "\\{");
-			out = out.replace("}", "\\}");
+			//out = out.replace("'", "\\'");
+			//out = out.replace("{", "\\{");
+			//out = out.replace("}", "\\}");
 			out = out.replace("\"", "\\\"");
 			out = out.replaceAll("[\\p{Cntrl}&&[^\r\n\t]]|[\\ufffe-\\uffff]", "");
 			return out;

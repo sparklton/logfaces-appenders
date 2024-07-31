@@ -45,7 +45,7 @@ import org.apache.logging.log4j.core.impl.Log4jLogEvent;
 import org.apache.logging.log4j.core.layout.AbstractStringLayout;
 import org.apache.logging.log4j.core.net.ssl.SslConfiguration;
 
-import com.moonlit.logfaces.appenders.Utils;
+import com.moonlit.logfaces.appenders.util.Utils;
 
 
 @Plugin(name = "logFaces", category = "Core", elementType = "appender", printObject = true)
@@ -140,7 +140,7 @@ public class LogfacesAppender extends AbstractAppender{
 	    	LogEvent clone = Log4jLogEvent.createMemento(event, locationInfo);
 			if(!queue.offer(clone, offerTimeout, TimeUnit.MILLISECONDS)){
 				if(warnOverflow++ == 0){
-					LOGGER.error("{} queue is full with {} events. If you see this message it means that queue size needs to be increased or amount of produced log events decreased.", cls, queue.size());
+					LOGGER.warn("{} queue is full with {} events. If you see this message it means that queue size needs to be increased or amount of produced log events decreased.", cls, queue.size());
 					LOGGER.warn("{} {}", cls, (backup == null)?"fall back is disabled":"backup appender activated; You can later import this data into the logfaces server manually.");
 				}
 				if(backup != null)
@@ -153,7 +153,7 @@ public class LogfacesAppender extends AbstractAppender{
 		catch(InterruptedException e) {
 		}
 		catch(Exception e){
-			LOGGER.error("{} failed to append: {}", cls, e.getMessage());
+			LOGGER.warn("{} failed to append: {}", cls, e.getMessage());
 		}
     }
     
@@ -263,7 +263,7 @@ public class LogfacesAppender extends AbstractAppender{
 					break;
 				}
 				catch(Exception e){
-					LOGGER.error("{} queue processing failed: {}", cls, e.getMessage());
+					LOGGER.warn("{} queue processing failed: {}", cls, e.getMessage());
 					continue;
 				}
 			}

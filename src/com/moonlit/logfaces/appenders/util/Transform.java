@@ -18,7 +18,7 @@
  * limitations under the License.
  */
 
-package com.moonlit.logfaces.appenders;
+package com.moonlit.logfaces.appenders.util;
 
 
 /**

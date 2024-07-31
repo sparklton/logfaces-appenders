@@ -33,7 +33,7 @@ import org.apache.logging.log4j.core.util.Throwables;
 import org.apache.logging.log4j.core.util.Transform;
 import org.apache.logging.log4j.util.ReadOnlyStringMap;
 
-import com.moonlit.logfaces.appenders.Utils;
+import com.moonlit.logfaces.appenders.util.Utils;
 
 
 public class LogfacesXmlLayout extends AbstractStringLayout{

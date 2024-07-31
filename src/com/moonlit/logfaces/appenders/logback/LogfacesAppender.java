@@ -128,7 +128,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 				writer.close();
 			}
 			catch (IOException e){
-				addError(e.getMessage(),e);
+				addWarn(e.getMessage(),e);
 			}
 			writer = null;
 		}
@@ -163,7 +163,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 			sslContext.init(null, trustManagers, null);
 			socketFactory = sslContext.getSocketFactory();
 		} catch (Exception e) {
-			addError(String.format("Failed to initialize SSL context: error: %s", e.getMessage()));
+			addWarn(String.format("Failed to initialize SSL context: error: %s", e.getMessage()));
 		} 
 	}
 	
@@ -177,7 +177,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 			writer = new OutputStreamWriter(socket.getOutputStream());
 		}
 		catch(Exception e){
-			addError(String.format("logFaces: appender can't connect to server %s:%d, starting failover", hosts.get(hostIndex), port));
+			addWarn(String.format("logFaces: appender can't connect to server %s:%d, starting failover", hosts.get(hostIndex), port));
 			startFailover();
 		}
 	}
@@ -213,11 +213,12 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 		}
 	}
 
-	protected static InetAddress getAddressByName(String host){
+	protected InetAddress getAddressByName(String host){
 		try{
 			return InetAddress.getByName(host);
 		}
 		catch (Exception e){
+			addWarn(String.format("failed to resolve %s, error: %s", host, e.getMessage()));
 			return null;
 		}
 	}
@@ -292,7 +293,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 				catch(Exception e){
 					if(shutdown)
 						break;
-					addError("logFaces appender queue taking failed:" + e.getMessage());
+					addWarn("logFaces appender queue taking failed:" + e.getMessage());
 					continue;
 				}
 
@@ -310,7 +311,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 				}
 				catch(IOException e){
 					writer = null;
-					addError("logFaces appender socket write failed: " + e.getMessage());
+					addWarn("logFaces appender socket write failed: " + e.getMessage());
 					if(shutdown)
 						break;
 
@@ -319,7 +320,7 @@ public class LogfacesAppender extends AppenderBase<ILoggingEvent> implements App
 					startFailover();
 				}
 				catch(Exception e){
-					addError("logFaces appender general purpose failure: " + e.getMessage());
+					addWarn("logFaces appender general purpose failure: " + e.getMessage());
 					if(shutdown)
 						break;
 				}

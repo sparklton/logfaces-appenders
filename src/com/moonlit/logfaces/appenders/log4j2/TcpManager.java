@@ -109,11 +109,11 @@ public class TcpManager implements SocketManager{
 			return true;
 		}
 		catch(IOException e){
-			LOGGER.error("socket write failed: {}", e.getMessage());
+			LOGGER.warn("socket write failed: {}", e.getMessage());
 			reconnect();
 		}
 		catch(Exception e){
-			LOGGER.error("general purpose error: {}", e.getMessage());
+			LOGGER.warn("general purpose error: {}", e.getMessage());
 		}
 		return false;
 	}
@@ -124,7 +124,7 @@ public class TcpManager implements SocketManager{
 				oos.close();
 			}
 			catch (IOException e) {
-				LOGGER.error("failed to close socket stream: {}", e.getMessage());
+				LOGGER.warn("failed to close socket stream: {}", e.getMessage());
 			}
 
 			oos = null;
@@ -142,7 +142,7 @@ public class TcpManager implements SocketManager{
 		try {
 			return InetAddress.getByName(host);
 		} catch (Exception e) {
-			e.printStackTrace();
+			LOGGER.warn("failed to resolve {}, error: {}", host, e.getMessage());
 			return null;
 		}
 	}
@@ -179,7 +179,7 @@ public class TcpManager implements SocketManager{
 					if(++nofFailures >= nofRetries){
 						if(++hostIndex >= hosts.size())
 							hostIndex = 0;
-						LOGGER.error(String.format("logFaces: appender unable to connect to %s after %d retries, trying %s", address, nofRetries, hosts.get(hostIndex)));
+						LOGGER.warn(String.format("logFaces: appender unable to connect to %s after %d retries, trying %s", address, nofRetries, hosts.get(hostIndex)));
 						nofFailures = 0;
 						connector = null;
 						reconnect();
